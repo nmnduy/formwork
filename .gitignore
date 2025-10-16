@@ -1,0 +1,51 @@
+### Java / Maven Ignored Files
+# Maven target directory
+target/
+# Maven release and build backups
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+
+### Compiled class files
+*.class
+
+### Log files
+*.log
+
+### Package files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+### IDE files
+# Eclipse
+.classpath
+.project
+.settings/
+# IntelliJ IDEA
+*.iml
+.idea/
+out/
+# NetBeans
+nb-configuration.xml
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+### VS Code
+.vscode/
+
+### OS files
+.DS_Store
+Thumbs.db

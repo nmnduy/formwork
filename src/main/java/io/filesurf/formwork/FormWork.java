@@ -79,7 +79,9 @@ public class FormWork {
 
         lastLlmResponse = llmResponse;
 
-        T result = jsonParser.extractJsonFromLlmOutput(llmResponse, config.targetClass());
+        // Parse JSON and convert to target object
+        com.fasterxml.jackson.databind.JsonNode jsonNode = jsonParser.extractJsonFromLlmOutput(llmResponse);
+        T result = jsonParser.convertObject(jsonNode, config.targetClass());
 
         if (attempt == 1) {
           LOG.debug(
@@ -208,10 +210,8 @@ public class FormWork {
       prompt.append(schema).append("\n\n");
     } catch (Exception e) {
       throw new RuntimeException(
-          "Failed to generate schema for {}",
-          targetClass.getSimpleName(),
-          e.getMessage());
-      prompt.append("Target class: ").append(targetClass.getSimpleName()).append("\n\n");
+          "Failed to generate schema for " + targetClass.getSimpleName(),
+          e);
     }
 
     if (hasEnumFields(targetClass)) {

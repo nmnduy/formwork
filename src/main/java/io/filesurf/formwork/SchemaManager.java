@@ -62,3 +62,39 @@ public class SchemaManager {
     }
   }
 
+  /**
+   * Generate JSON Schema for target class.
+   */
+  public String toJsonSchema(Class<?> targetClass) {
+    try {
+      SchemaFactoryWrapper visitor = new SchemaFactoryWrapper();
+      objectMapper.acceptJsonFormatVisitor(objectMapper.constructType(targetClass), visitor);
+      JsonSchema schema = visitor.finalSchema();
+      return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(schema);
+    } catch (Exception e) {
+      LOG.error("Failed to generate JSON schema for {}: {}", targetClass.getSimpleName(), e.getMessage());
+      throw new RuntimeException("Failed to generate JSON schema for " + targetClass.getSimpleName(), e);
+    }
+  }
+
+  /**
+   * Recursively collect enum field values from model classes.
+   */
+  private void collectEnumFields(Class<?> clazz, StringBuilder prompt, String path, Set<Class<?>> visited) {
+    if (!visited.add(clazz)) {
+      return;
+    }
+    for (Field field : clazz.getDeclaredFields()) {
+      Class<?> fieldType = field.getType();
+      if (fieldType.isEnum()) {
+        prompt.append(path).append(field.getName()).append(": ");
+        String enums = Arrays.stream(fieldType.getEnumConstants())
+            .map(Object::toString)
+            .collect(Collectors.joining(", "));
+        prompt.append(enums).append("\n");
+      } else if (isModelClass(fieldType)) {
+        collectEnumFields(fieldType, prompt, path + field.getName() + ".", visited);
+      }
+    }
+  }
+}
