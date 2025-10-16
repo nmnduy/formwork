@@ -6,63 +6,26 @@ import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * FormWork provides a utility function for LLM-based object construction. It calls an LLM
- * with a prompt that includes JSON schema information and parses the response into instances of
- * Java data classes.
- *
- * <p>This utility combines schema generation, LLM invocation, and JSON parsing with retry logic for
- * robust object construction from LLM responses.
- */
 public class FormWork {
 
   private static final Logger LOG = LoggerFactory.getLogger(FormWork.class);
 
-  // Default retry configuration
   private static final int DEFAULT_MAX_RETRIES = 3;
   private static final long DEFAULT_RETRY_DELAY_MS = 1000;
 
   private final SchemaManager schemaManager;
   private final JsonParser jsonParser;
 
-  /** Default constructor - creates instances of SchemaManager and JsonParser. */
-  public FormWork() {
-    this.schemaManager = new SchemaManager();
-    this.jsonParser = new JsonParser();
-  }
-
-  /** Constructor with injected dependencies for testing or custom configurations. */
   public FormWork(SchemaManager schemaManager, JsonParser jsonParser) {
     this.schemaManager = schemaManager;
     this.jsonParser = jsonParser;
   }
 
-  /**
-   * Constructs an instance of the specified class using an LLM.
-   *
-   * @param <T> The target type to construct
-   * @param targetClass The class of the object to construct
-   * @param basePrompt The base prompt to send to the LLM
-   * @param llmCaller A function that calls the LLM and returns a string response
-   * @return An instance of the target class constructed from LLM output
-   * @throws LlmFormworkException if construction fails after all retries
-   */
   public <T> T construct(
       Class<T> targetClass, String basePrompt, Function<String, String> llmCaller) {
     return construct(targetClass, basePrompt, llmCaller, DEFAULT_MAX_RETRIES);
   }
 
-  /**
-   * Constructs an instance of the specified class using an LLM with custom retry count.
-   *
-   * @param <T> The target type to construct
-   * @param targetClass The class of the object to construct
-   * @param basePrompt The base prompt to send to the LLM
-   * @param llmCaller A function that calls the LLM and returns a string response
-   * @param maxRetries Maximum number of retry attempts
-   * @return An instance of the target class constructed from LLM output
-   * @throws FormWorkException if construction fails after all retries
-   */
   public <T> T construct(
       Class<T> targetClass, String basePrompt, Function<String, String> llmCaller, int maxRetries) {
     return constructWithConfig(
@@ -75,14 +38,6 @@ public class FormWork {
             .build());
   }
 
-  /**
-   * Constructs an instance using detailed configuration.
-   *
-   * @param <T> The target type to construct
-   * @param config Construction configuration
-   * @return An instance of the target class constructed from LLM output
-   * @throws FormWorkException if construction fails after all retries
-   */
   public <T> T constructWithConfig(ConstructionConfig<T> config) {
     String fullPrompt = buildFullPrompt(config.targetClass(), config.basePrompt());
 
@@ -97,12 +52,10 @@ public class FormWork {
             attempt,
             config.maxRetries());
 
-        // Report attempt start to metrics
         if (config.retryMetrics() != null) {
           config.retryMetrics().onAttemptStart(config.targetClass(), attempt, config.maxRetries());
         }
 
-        // Use error-enhanced prompt for retry attempts
         String promptToUse;
         if (attempt == 1) {
           promptToUse = fullPrompt;
@@ -140,7 +93,6 @@ public class FormWork {
               attempt);
         }
 
-        // Report success to metrics
         if (config.retryMetrics() != null) {
           config
               .retryMetrics()
@@ -150,8 +102,6 @@ public class FormWork {
         return result;
 
       } catch (IllegalArgumentException e) {
-        // Only retry on JSON parsing failures (empty response, malformed JSON,
-        // conversion errors)
         lastException = e;
         LOG.warn(
             "Construction attempt {}/{} failed for {}: {}",
@@ -160,7 +110,6 @@ public class FormWork {
             config.targetClass().getSimpleName(),
             e.getMessage());
 
-        // Call error callback if provided
         if (config.errorCallback() != null) {
           try {
             config.errorCallback().accept(e);
@@ -170,7 +119,6 @@ public class FormWork {
         }
 
         if (attempt < config.maxRetries()) {
-          // Report retry to metrics
           if (config.retryMetrics() != null) {
             config
                 .retryMetrics()
@@ -184,14 +132,12 @@ public class FormWork {
             throw new FormWorkException("Construction interrupted during retry delay", ie);
           }
         } else {
-          // Last attempt failed, throw the parsing exception
           LOG.info(
               "Error-correction retries exhausted for {} after {} attempts - final error: {}",
               config.targetClass().getSimpleName(),
               config.maxRetries(),
               e.getMessage());
 
-          // Report final failure to metrics
           if (config.retryMetrics() != null) {
             config.retryMetrics().onFinalFailure(config.targetClass(), config.maxRetries(), e);
           }
@@ -203,8 +149,6 @@ public class FormWork {
               e);
         }
       } catch (Exception e) {
-        // For non-parsing exceptions (LLM service failures, network issues, etc.),
-        // don't retry and fail immediately
         LOG.error(
             "Non-retryable error during construction of {}: {}",
             config.targetClass().getSimpleName(),
@@ -217,19 +161,9 @@ public class FormWork {
       }
     }
 
-    // This should never be reached due to exception handling above
     throw new FormWorkException("Unexpected end of retry loop");
   }
 
-  /**
-   * Builds a retry prompt that includes error context from the previous attempt.
-   *
-   * @param targetClass The class to generate schema for
-   * @param basePrompt The user's original base prompt
-   * @param lastException The exception from the previous attempt
-   * @param lastLlmResponse The LLM response that caused the error
-   * @return Enhanced prompt with error context and correction instructions
-   */
   private String buildRetryPrompt(
       Class<?> targetClass, String basePrompt, Exception lastException, String lastLlmResponse) {
     StringBuilder prompt = new StringBuilder();
@@ -260,35 +194,26 @@ public class FormWork {
     return prompt.toString();
   }
 
-  /**
-   * Builds the full prompt including schema information for the target class. This is useful for
-   * both internal construction and external use with streaming or custom processing.
-   *
-   * @param targetClass The class to generate schema for
-   * @param basePrompt The user's base prompt
-   * @return Complete prompt with schema information
-   */
   public String buildFullPrompt(Class<?> targetClass, String basePrompt) {
     StringBuilder prompt = new StringBuilder();
 
-    prompt.append(basePrompt).append("\n\n");
+    prompt.append(basePrompt).append("\n");
 
-    prompt.append("=== OUTPUT FORMAT ===\n\n");
-    prompt.append("You MUST respond with valid JSON that matches this exact schema:\n\n");
+    prompt.append("# Output format\n");
+    prompt.append("Your response MUST be a valid JSON string that matches this exact schema:\n\n");
 
     try {
       String schema = schemaManager.toJsonSchema(targetClass);
       prompt.append("JSON Schema for ").append(targetClass.getSimpleName()).append(":\n");
       prompt.append(schema).append("\n\n");
     } catch (Exception e) {
-      LOG.warn(
-          "Failed to generate schema for {}, using class name only: {}",
+      throw new RuntimeException(
+          "Failed to generate schema for {}",
           targetClass.getSimpleName(),
           e.getMessage());
       prompt.append("Target class: ").append(targetClass.getSimpleName()).append("\n\n");
     }
 
-    // Add enum constraints if applicable
     if (hasEnumFields(targetClass)) {
       try {
         prompt.append(schemaManager.getEnumConstraintsPrompt(targetClass)).append("\n\n");
@@ -297,18 +222,9 @@ public class FormWork {
       }
     }
 
-    prompt
-        .append("IMPORTANT: Return ONLY valid JSON that can be parsed into a ")
-        .append(targetClass.getSimpleName())
-        .append(" object. Do not include explanations, markdown formatting, or additional text.\n");
-
     return prompt.toString();
   }
 
-  /**
-   * Checks if a class likely has enum fields (basic heuristic). This is used to decide whether to
-   * include enum constraints in the prompt.
-   */
   private boolean hasEnumFields(Class<?> clazz) {
     try {
       return java.util.Arrays.stream(clazz.getDeclaredFields())
@@ -318,10 +234,6 @@ public class FormWork {
     }
   }
 
-  /**
-   * Configuration record for LLM construction parameters. Uses Java 17 records for immutable
-   * configuration.
-   */
   public record ConstructionConfig<T>(
       Class<T> targetClass,
       String basePrompt,
